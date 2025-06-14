@@ -1,0 +1,211 @@
+git clone https://github.com/SEU_USUARIO/JulgamentoEternoMod.git
+cd JulgamentoEternoMod
+JulgamentoEternoMod/
+├── build.gradle
+├── settings.gradle
+└── src/
+    └── main/
+        ├── java/com/julgamentoeterno/
+        │   ├── JulgamentoMod.java
+        │   ├── (registrations) ModDimensions.java
+        │   ├── events/DeathInterceptHandler.java
+        │   ├── dimension/JulgamentoDimension.java
+        │   ├── challenge/DesafioManager.java
+        │   └── utils/PlayerDataSaver.java
+        └── resources/
+            ├── META-INF/mods.toml
+            └── pack.mcmeta
+plugins {
+    id 'net.minecraftforge.gradle' version '6.1.69'
+}
+
+group = 'com.julgamentoeterno'
+version = '1.0.0'
+base.archivesName.set('julgamentoeterno')
+
+minecraft {
+    version = "1.21.5-55.0.23"
+    mappings channel: 'official', version: '1.21.5'
+    runs {
+        client {
+            workingDirectory file('run/client')
+        }
+        server {
+            workingDirectory file('run/server')
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.minecraftforge.net' }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:1.21.5-55.0.23"
+}
+
+jar {
+    manifest {
+        attributes(
+            "Specification-Title": "Julgamento Eterno",
+            "Implementation-Version": project.version
+        )
+    }
+}
+rootProject.name = "JulgamentoEternoMod"
+package com.julgamentoeterno;
+
+import com.julgamentoeterno.events.DeathInterceptHandler;
+import com.julgamentoeterno.registrations.ModDimensions;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.common.MinecraftForge;
+
+@Mod(JulgamentoMod.MODID)
+public class JulgamentoMod {
+    public static final String MODID = "julgamentoeterno";
+
+    public JulgamentoMod() {
+        IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
+        ModDimensions.register(bus);
+        MinecraftForge.EVENT_BUS.register(new DeathInterceptHandler());
+    }
+}
+package com.julgamentoeterno.registrations;
+
+import com.julgamentoeterno.JulgamentoMod;
+import net.minecraftforge.fml.RegistryObject;
+import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.Registry;
+import net.minecraft.world.level.Level;
+
+@EventBusSubscriber(modid = JulgamentoMod.MODID, bus = EventBusSubscriber.Bus.MOD)
+public class ModDimensions {
+    public static final DeferredRegister<RegistryKey<Level>> WORLDS = DeferredRegister.create(Registry.WORLD_REGISTRY, JulgamentoMod.MODID);
+
+    public static final RegistryObject<RegistryKey<Level>> JULGAMENTO_WORLD = WORLDS.register("julgamento",
+            () -> RegistryKey.create(Registry.WORLD_REGISTRY,
+                    new ResourceLocation(JulgamentoMod.MODID, "julgamento")));
+
+    public static void register(IEventBus bus) {
+        WORLDS.register(bus);
+    }
+}
+package com.julgamentoeterno.events;
+
+import com.julgamentoeterno.utils.PlayerDataSaver;
+import com.julgamentoeterno.dimension.JulgamentoDimension;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+
+public class DeathInterceptHandler {
+    @SubscribeEvent
+    public void onPlayerDeath(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        event.setCanceled(true);
+        player.sendSystemMessage(Component.literal("Sua alma foi levada para julgamento..."), player.getUUID());
+        PlayerDataSaver.save(player);
+        JulgamentoDimension.teleportToJulgamento(player);
+    }
+}
+package com.julgamentoeterno.dimension;
+
+import com.julgamentoeterno.challenge.DesafioManager;
+import com.julgamentoeterno.registrations.ModDimensions;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+
+public class JulgamentoDimension {
+    public static void teleportToJulgamento(ServerPlayer player) {
+        ServerLevel julgamentoLevel = player.getServer().getLevel(ModDimensions.JULGAMENTO_WORLD.get());
+        if (julgamentoLevel != null) {
+            player.teleportTo(julgamentoLevel, 0, 100, 0, player.getYRot(), player.getXRot());
+            DesafioManager.startDesafio(player);
+        }
+    }
+}
+package com.julgamentoeterno.challenge;
+
+import com.julgamentoeterno.utils.PlayerDataSaver;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.core.BlockPos;
+
+import java.util.Random;
+
+public class DesafioManager {
+    public static void startDesafio(ServerPlayer player) {
+        player.sendSystemMessage(Component.literal("Desafio: Derrote um zumbi!"), player.getUUID());
+        Zombie z = new Zombie(player.level());
+        BlockPos pos = player.blockPosition().offset(5, 5, 0);
+        z.teleportTo(pos.getX(), pos.getY(), pos.getZ());
+        player.level().addFreshEntity(z);
+        // Aqui você pode configurar spawns, parkour, puzzles etc.
+    }
+
+    public static void endDesafio(ServerPlayer player, boolean venceu) {
+        if (venceu) {
+            player.sendSystemMessage(Component.literal("Você venceu o julgamento e retornou à vida!"), player.getUUID());
+            PlayerDataSaver.restore(player);
+        } else {
+            player.hurt(player.damageSources().generic(), Float.MAX_VALUE);
+        }
+    }
+}
+package com.julgamentoeterno.utils;
+
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.nbt.CompoundTag;
+
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class PlayerDataSaver {
+    private static final ConcurrentHashMap<UUID, CompoundTag> saved = new ConcurrentHashMap<>();
+
+    public static void save(ServerPlayer player) {
+        CompoundTag tag = new CompoundTag();
+        player.save(tag);
+        saved.put(player.getUUID(), tag);
+    }
+
+    public static void restore(ServerPlayer player) {
+        CompoundTag tag = saved.remove(player.getUUID());
+        if (tag != null) {
+            player.load(tag);
+        }
+    }
+}
+modLoader="javafml"
+loaderVersion="[55,)"
+license="MIT"
+[[mods]]
+modId="julgamentoeterno"
+version="1.0.0"
+displayName="Julgamento Eterno"
+description='''
+Você morre, é julgado no Céu ou no Inferno e precisa vencer um desafio para escapar com seus itens e XP.
+'''
+{
+  "pack": {
+    "pack_format": 12,
+    "description": "Julgamento Eterno Mod – 1.21.5"
+  }
+}
+
+# Copie os arquivos do mod para dentro dessa pasta
+# (coloque src/, build.gradle, settings.gradle, etc.)
+
+git add .
+git commit -m "Versão inicial do mod Julgamento Eterno para Minecraft 1.21.5"
+git push origin main
